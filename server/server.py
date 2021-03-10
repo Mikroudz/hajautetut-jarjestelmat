@@ -11,30 +11,43 @@ from aiohttp import ClientSession
 from av import VideoFrame
 
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder
+from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder, MediaRelay
 
 ROOT = os.path.dirname(__file__)
 
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("pc")
 pcs = set()
 
+relay = None
+broadcast = None
 
-class VideoTransformTrack(MediaStreamTrack):
-    """
-    A video stream track that transforms frames from an another track.
-    """
+class VideoBroadcast(MediaStreamTrack):
 
     kind = "video"
 
-    def __init__(self, track, transform):
+    def __init__(self, track):
         super().__init__()  # don't forget this!
         self.track = track
-        self.transform = transform
+        self.transform = None
 
     async def recv(self):
         frame = await self.track.recv()
         return frame
 
+def get_from_rtmp():
+    global relay, rtmp_stream
+    #if relay is None:
+    #    rtmp_stream = MediaPlayer("rtmp://kiisu.club/live/stream", format='flv')
+    #    relay = MediaRelay()
+
+    return None, relay.subscribe(broadcast.video)
+
+def create_broadcast(track):
+    global relay, broadcast
+    relay = MediaRelay()
+    broadcast = track
+    
 async def offer(request):
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
@@ -75,14 +88,15 @@ async def offer(request):
     def on_track(track):
         log_info("Track %s received", track.kind)
 
+        #if params["listen_video"]:
+         #   pc.addTrack(relay.subscribe(track))
         if track.kind == "audio":
             pc.addTrack(player.audio)
             recorder.addTrack(track)
         elif track.kind == "video":
-            local_video = VideoTransformTrack(
-                track, transform=params["video_transform"]
-            )
-            pc.addTrack(local_video)
+            create_broadcast(track)
+            pc.addTrack(track)
+            #broadcast_video = VideoBroadcast(track)
 
         @track.on("ended")
         async def on_ended():
@@ -91,6 +105,13 @@ async def offer(request):
 
     # handle offer
     await pc.setRemoteDescription(offer)
+
+    if params["listen_video"]:
+        print("ONKONKONKNONKO")
+        for t in pc.getTransceivers():
+            #if t.kind == "video" and video:
+            pc.addTrack(relay.subscribe(broadcast))
+
     await recorder.start()
 
     # send answer
