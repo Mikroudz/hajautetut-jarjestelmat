@@ -106,6 +106,9 @@ async def offer(request):
 
     logger.info(offer)
 
+    # Luo ClientSession luokasta session ja välittää selaimen 
+    # requestin ulkoiselle clientille
+    # Dispatcheria varten
     async with ClientSession() as session:
         await session.post('http://localhost:8081/offer', json=params)
 
@@ -139,6 +142,10 @@ async def offer(request):
         if pc.connectionState == "failed":
             await pc.close()
             pcs.discard(pc)
+
+    # Otetaan video ja audio vastaan striimin välittävältä palvelimelta
+    # Tässä toistetaan video / audio -tiedosto, mitä tarkoittaa jatkuvan
+    # streamin tapauksessa?
 
     @pc.on("track")
     def on_track(track):

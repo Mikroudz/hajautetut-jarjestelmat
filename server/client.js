@@ -18,7 +18,8 @@ function createPeerConnection() {
     if (document.getElementById('use-stun').checked) {
         config.iceServers = [{urls: ['stun:stun.l.google.com:19302']}];
     }
-    config.iceServer = [{urls: ['turn:localhost:8081']}];
+    // Testi, ei toiminut
+    // config.iceServer = [{urls: ['turn:localhost:8081']}];
 
     pc = new RTCPeerConnection(config);
 
@@ -144,7 +145,7 @@ function start() {
             }
         };
     }
-
+    // asetusobjekti
     var constraints = {
         audio: document.getElementById('use-audio').checked,
         video: false
