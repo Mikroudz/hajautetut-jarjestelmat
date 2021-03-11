@@ -149,7 +149,7 @@ function start() {
             }
         };
     }
-
+    // asetusobjekti
     var constraints = {
         audio: document.getElementById('use-audio').checked,
         video: false

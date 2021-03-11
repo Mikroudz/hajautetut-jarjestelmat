@@ -84,6 +84,10 @@ async def offer(request):
             await pc.close()
             pcs.discard(pc)
 
+    # Otetaan video ja audio vastaan striimin välittävältä palvelimelta
+    # Tässä toistetaan video / audio -tiedosto, mitä tarkoittaa jatkuvan
+    # streamin tapauksessa?
+
     @pc.on("track")
     def on_track(track):
         log_info("Track %s received", track.kind)
