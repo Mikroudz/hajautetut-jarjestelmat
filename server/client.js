@@ -52,7 +52,7 @@ function createPeerConnection() {
 function negotiate() {
     if (document.getElementById('listen-video').checked) {
         pc.addTransceiver('video', {direction: 'recvonly'});
-        pc.addTransceiver('audio', {direction: 'recvonly'});
+        //pc.addTransceiver('audio', {direction: 'recvonly'});
     }
     return pc.createOffer().then(function(offer) {
         return pc.setLocalDescription(offer);
