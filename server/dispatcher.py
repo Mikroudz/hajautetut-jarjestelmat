@@ -8,15 +8,44 @@ import uuid
 
 from aiohttp import web
 from aiohttp import ClientSession
+<<<<<<< Updated upstream
 from av import VideoFrame
 
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder
+=======
+from collections import namedtuple
+>>>>>>> Stashed changes
 
 ROOT = os.path.dirname(__file__)
 
 logger = logging.getLogger("pc")
 pcs = set()
+
+
+class ServerList(object):
+    def __init__(self):
+        self.candidates = []
+        #server: address, load, seen
+    class Server:
+        def __init__(self, address, load):
+            self.addr = address
+            self.load = load
+            self.seen = 0
+        
+    def add_new(self, addr, load):
+        self.candidates.append(self.Server(addr,load))
+
+    def update(self, data):
+        pass
+    def remove(self, address):
+        pass
+    def remove_old(self):
+        pass
+    def get_least_loaded(self):
+        pass        
+
+servers = ServerList()
 
 async def index(request):
     content = open(os.path.join(ROOT, "index.html"), "r").read()
@@ -42,12 +71,21 @@ async def offer(request):
         content_type="application/json",
         text=json.dumps(sdp_data),)
 
+<<<<<<< Updated upstream
 async def on_shutdown(app):
     # close peer connections
     coros = [pc.close() for pc in pcs]
     await asyncio.gather(*coros)
     pcs.clear()
 
+=======
+async def timer():
+    while True:
+        await asyncio.sleep(10)
+        for s in servers.candidates:
+            print(s)
+    
+>>>>>>> Stashed changes
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -84,3 +122,18 @@ if __name__ == "__main__":
     web.run_app(
         app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
     )
+<<<<<<< Updated upstream
+=======
+
+    servers.add_new("asd", 10)
+
+    loop.run_until_complete(tasks)
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt as e:
+        loop.close()
+
+    #web.run_app(
+    #    app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
+    #)
+>>>>>>> Stashed changes
