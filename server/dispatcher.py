@@ -8,14 +8,7 @@ import uuid
 
 from aiohttp import web
 from aiohttp import ClientSession
-<<<<<<< Updated upstream
-from av import VideoFrame
-
-from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder
-=======
-from collections import namedtuple
->>>>>>> Stashed changes
+from time import time
 
 ROOT = os.path.dirname(__file__)
 
@@ -24,28 +17,41 @@ pcs = set()
 
 
 class ServerList(object):
-    def __init__(self):
+    def __init__(self, timeout):
         self.candidates = []
-        #server: address, load, seen
+        self.timeout = timeout
     class Server:
         def __init__(self, address, load):
             self.addr = address
             self.load = load
-            self.seen = 0
+            self.seen = time()
+        def update_time(self):
+            self.seen = time()
+        def age(self):
+            return time() - self.seen
         
     def add_new(self, addr, load):
         self.candidates.append(self.Server(addr,load))
 
-    def update(self, data):
-        pass
-    def remove(self, address):
-        pass
+    def update(self, address, load):
+        for obj in self.candidates:
+            if obj.addr == address:
+                obj.load = load
+                obj.update_time()
+                return
+        self.add_new(address, load)
+
     def remove_old(self):
         pass
-    def get_least_loaded(self):
-        pass        
+    def get_least_loaded_address(self):
+        min_addr = None
+        for obj in self.candidates:
+            if obj.age() < self.timeout:
+                min_addr = obj.addr
+        return min_addr
+        
 
-servers = ServerList()
+servers = ServerList(10)
 
 async def index(request):
     content = open(os.path.join(ROOT, "index.html"), "r").read()
@@ -71,21 +77,17 @@ async def offer(request):
         content_type="application/json",
         text=json.dumps(sdp_data),)
 
-<<<<<<< Updated upstream
-async def on_shutdown(app):
-    # close peer connections
-    coros = [pc.close() for pc in pcs]
-    await asyncio.gather(*coros)
-    pcs.clear()
-
-=======
 async def timer():
+    val = 5
     while True:
-        await asyncio.sleep(10)
+        servers.update("asda", val)
+        await asyncio.sleep(1)
         for s in servers.candidates:
-            print(s)
+            #print("asd")
+            print("%s %s %s" % (s.addr, s.load, s.seen))
+
+        print(servers.get_least_loaded_address())
     
->>>>>>> Stashed changes
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -114,18 +116,30 @@ if __name__ == "__main__":
     else:
         ssl_context = None
 
+    loop = asyncio.get_event_loop()
+
     app = web.Application()
-    app.on_shutdown.append(on_shutdown)
     app.router.add_get("/", index)
     app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
-    web.run_app(
-        app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
+
+    async def web_runner():
+        runner = web.AppRunner(app, access_log=None)
+        await runner.setup()
+        site = web.TCPSite(runner, port=args.port, host=args.host, ssl_context=ssl_context)
+        await site.start()
+        print("Web server started in %s port %s " % (args.host, args.port))
+
+    tasks = asyncio.gather(
+        web_runner(),
+        timer()
     )
-<<<<<<< Updated upstream
-=======
 
     servers.add_new("asd", 10)
+    servers.update("asda", 11)
+    servers.update("asdb", 12)
+    servers.update("asdc", 15)
+
 
     loop.run_until_complete(tasks)
     try:
@@ -136,4 +150,3 @@ if __name__ == "__main__":
     #web.run_app(
     #    app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
     #)
->>>>>>> Stashed changes
