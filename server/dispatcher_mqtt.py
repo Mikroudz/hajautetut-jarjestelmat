@@ -14,12 +14,15 @@ from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder
 
 import paho.mqtt.client as mqtt
-import context
+# import context
+import datetime
 
 ROOT = os.path.dirname(__file__)
 
 logger = logging.getLogger("pc")
 pcs = set()
+
+connections = {}
 
 ### Subscriber
 # The callback function of connection
@@ -29,13 +32,33 @@ def on_connect(client, userdata, flags, rc):
     
 # The callback function for received message
 def on_message(client, userdata, msg):
-    print(msg.topic+" "+str(msg.payload))
+    host = json.loads(msg.payload)["host"]
+    cons = json.loads(msg.payload)["num_of_connections"] 
+    timestamp = datetime.datetime.now().timestamp()
+    connections[host] = (cons, timestamp) 
+    print(f"Added host {host} with {cons} connections")
+    print(f"Timestamp: {timestamp}")
     
 client = mqtt.Client()
 client.on_connect = on_connect
 client.on_message = on_message
 client.connect("localhost", 1883, 60)
 client.loop_forever()
+
+def least_connections():
+
+    global connections
+    # newest = max([i["host"][1] for i in connections])
+    timeslot = datetime.datetime.now().timestamp() - (10)
+    
+    lc_host = connections.keys()[0]
+    for (key, value) in connections.items():
+        if value[1] > timeslot and\
+                value[0] < lc_host["host"][0]:
+            lc_host = key
+    return key
+
+        
 
 async def index(request):
     content = open(os.path.join(ROOT, "index.html"), "r").read()
@@ -53,7 +76,11 @@ async def offer(request):
     #logger.info(offer)
     # Välitä json data eteenpäin 8081-portissa toimivalle videopalvelimelle
     async with ClientSession() as session:
-        res = await session.post('http://localhost:8081/offer', json=params)
+        # Kutsu algoritmia #
+        lc_host = least_connections()
+
+        # res = await session.post('http://localhost:8081/offer', json=params)
+        res = await session.post(f'{lc_host}:8081/offer', json=params)
     #Lue vastaus videopalvelimelta
     sdp_data = await res.json()
     # Palauta clientin responseen videopalvelimen sdp-data json-muodossa

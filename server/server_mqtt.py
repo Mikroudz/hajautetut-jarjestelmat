@@ -23,8 +23,9 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("pc")
 pcs = set()
 
-payload = {
+payload_dict = {
     "num_of_connections": len(pcs),
+    "host": "127.0.0.1:8081"
 }
 
 relay = None
@@ -40,9 +41,11 @@ client.connect("localhost", 1883, 60)
 
 client.publish(
     'Number of connections',
-    payload=json.dumps(payload), qos=0, retain=False
+    payload=json.dumps(payload_dict), qos=0, retain=False
 )
-print(f"send value of {payload["num_of_connections"]} connections to broker")
+print(f"send value of {payload_dict['num_of_connections']}"
+      +f" connections from host {payload_dict['host']}"
+      +" to broker")
 time.sleep(10)
 
 client.loop_forever()
