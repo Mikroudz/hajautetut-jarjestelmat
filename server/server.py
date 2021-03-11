@@ -15,39 +15,17 @@ from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder, Med
 
 ROOT = os.path.dirname(__file__)
 
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("pc")
 pcs = set()
 
-relay = None
+relay = MediaRelay()
 broadcast = None
-
-class VideoBroadcast(MediaStreamTrack):
-
-    kind = "video"
-
-    def __init__(self, track):
-        super().__init__()  # don't forget this!
-        self.track = track
-        self.transform = None
-
-    async def recv(self):
-        frame = await self.track.recv()
-        return frame
-
-def get_from_rtmp():
-    global relay, rtmp_stream
-    #if relay is None:
-    #    rtmp_stream = MediaPlayer("rtmp://kiisu.club/live/stream", format='flv')
-    #    relay = MediaRelay()
-
-    return None, relay.subscribe(broadcast.video)
 
 def create_broadcast(track):
     global relay, broadcast
-    relay = MediaRelay()
     broadcast = track
-    
+
 async def offer(request):
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
@@ -62,13 +40,6 @@ async def offer(request):
         logger.info(pc_id + " " + msg, *args)
 
     log_info("Created for %s", request.remote)
-
-    # prepare local media
-    player = MediaPlayer(os.path.join(ROOT, "demo-instruct.wav"))
-    if args.write_audio:
-        recorder = MediaRecorder(args.write_audio)
-    else:
-        recorder = MediaBlackhole()
 
     @pc.on("datachannel")
     def on_datachannel(channel):
@@ -91,32 +62,31 @@ async def offer(request):
     @pc.on("track")
     def on_track(track):
         log_info("Track %s received", track.kind)
-
-        #if params["listen_video"]:
-         #   pc.addTrack(relay.subscribe(track))
         if track.kind == "audio":
             pc.addTrack(player.audio)
             recorder.addTrack(track)
         elif track.kind == "video":
             create_broadcast(track)
-            pc.addTrack(track)
-            #broadcast_video = VideoBroadcast(track)
+            pc.addTrack(relay.subscribe(broadcast))
 
         @track.on("ended")
         async def on_ended():
             log_info("Track %s ended", track.kind)
-            await recorder.stop()
+            #await recorder.stop()
 
     # handle offer
     await pc.setRemoteDescription(offer)
 
+    # Tämä ajetaan kun clientistä on "Listen for..." valittuna
+    # addTrack menee clienttiin ja siihen laitetaan relay broadcastista
     if params["listen_video"]:
-        print("ONKONKONKNONKO")
+        log_info("Kuuntelu")
         for t in pc.getTransceivers():
-            #if t.kind == "video" and video:
-            pc.addTrack(relay.subscribe(broadcast))
+            # Tarkasta onko "broadcast" olemassa
+            if t.kind == "video" and broadcast:
+                pc.addTrack(relay.subscribe(broadcast))
 
-    await recorder.start()
+    #await recorder.start()
 
     # send answer
     answer = await pc.createAnswer()
@@ -141,8 +111,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="WebRTC audio / video / data-channels demo"
     )
-    parser.add_argument("--cert-file", help="SSL certificate file (for HTTPS)")
-    parser.add_argument("--key-file", help="SSL key file (for HTTPS)")
     parser.add_argument(
         "--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)"
     )
@@ -158,11 +126,7 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(level=logging.INFO)
 
-    if args.cert_file:
-        ssl_context = ssl.SSLContext()
-        ssl_context.load_cert_chain(args.cert_file, args.key_file)
-    else:
-        ssl_context = None
+    ssl_context = None
 
     app = web.Application()
     app.on_shutdown.append(on_shutdown)
