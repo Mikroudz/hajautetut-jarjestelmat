@@ -8,15 +8,11 @@ import uuid
 
 from aiohttp import web
 from aiohttp import ClientSession
-from av import VideoFrame
-
-from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder
+import aiohttp
 
 ROOT = os.path.dirname(__file__)
 
 logger = logging.getLogger("pc")
-pcs = set()
 
 async def index(request):
     content = open(os.path.join(ROOT, "index.html"), "r").read()
@@ -26,6 +22,8 @@ async def index(request):
 async def javascript(request):
     content = open(os.path.join(ROOT, "client.js"), "r").read()
     return web.Response(content_type="application/javascript", text=content)
+
+
 
 ## Tähän tulee client-verkkosivulta WebRTC-pyynnöt
 async def offer(request):
@@ -42,13 +40,11 @@ async def offer(request):
         content_type="application/json",
         text=json.dumps(sdp_data),)
 
-async def on_shutdown(app):
-    # close peer connections
-    coros = [pc.close() for pc in pcs]
-    await asyncio.gather(*coros)
-    pcs.clear()
+async def timer():
+    await asyncio.sleep(10)
+    print("asd")
 
-
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="WebRTC audio / video / data-channels demo"
@@ -76,11 +72,31 @@ if __name__ == "__main__":
     else:
         ssl_context = None
 
+    loop = asyncio.get_event_loop()
+
     app = web.Application()
-    app.on_shutdown.append(on_shutdown)
     app.router.add_get("/", index)
     app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
-    web.run_app(
-        app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
+
+    async def web_runner():
+        runner = web.AppRunner(app, access_log=None)
+        await runner.setup()
+        site = web.TCPSite(runner, port=args.port, host=args.host, ssl_context=ssl_context)
+        await site.start()
+        print("Web server started in %s port %s " % (args.host, args.port))
+
+    tasks = asyncio.gather(
+        web_runner(),
+        timer()
     )
+
+    loop.run_until_complete(tasks)
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt as e:
+        loop.close()
+
+    #web.run_app(
+    #    app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
+    #)
