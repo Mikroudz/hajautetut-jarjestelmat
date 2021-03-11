@@ -13,10 +13,29 @@ from av import VideoFrame
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder
 
+import paho.mqtt.client as mqtt
+import context
+
 ROOT = os.path.dirname(__file__)
 
 logger = logging.getLogger("pc")
 pcs = set()
+
+### Subscriber
+# The callback function of connection
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected with result code {rc}")
+    client.subscribe("Number of connections")
+    
+# The callback function for received message
+def on_message(client, userdata, msg):
+    print(msg.topic+" "+str(msg.payload))
+    
+client = mqtt.Client()
+client.on_connect = on_connect
+client.on_message = on_message
+client.connect("localhost", 1883, 60)
+client.loop_forever()
 
 async def index(request):
     content = open(os.path.join(ROOT, "index.html"), "r").read()

@@ -13,14 +13,40 @@ from av import VideoFrame
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder, MediaRelay
 
+import paho.mqtt.client as mqtt
+import time
+
+
 ROOT = os.path.dirname(__file__)
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("pc")
 pcs = set()
 
+payload = {
+    "num_of_connections": len(pcs),
+}
+
 relay = None
 broadcast = None
+
+### Publisher
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected with result code {rc}")
+    
+client = mqtt.Client()
+client.on_connect = on_connect
+client.connect("localhost", 1883, 60)
+
+client.publish(
+    'Number of connections',
+    payload=json.dumps(payload), qos=0, retain=False
+)
+print(f"send value of {payload["num_of_connections"]} connections to broker")
+time.sleep(10)
+
+client.loop_forever()
+
 
 class VideoBroadcast(MediaStreamTrack):
 
@@ -83,10 +109,6 @@ async def offer(request):
         if pc.connectionState == "failed":
             await pc.close()
             pcs.discard(pc)
-
-    # Otetaan video ja audio vastaan striimin välittävältä palvelimelta
-    # Tässä toistetaan video / audio -tiedosto, mitä tarkoittaa jatkuvan
-    # streamin tapauksessa?
 
     @pc.on("track")
     def on_track(track):
