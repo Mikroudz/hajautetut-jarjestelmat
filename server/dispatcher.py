@@ -43,7 +43,7 @@ class ServerList(object):
                 return
         self.add_new(address, load)
     # Poista vanha palvelin käytöstä jos seen > timeout
-    def remove_old(self):
+    def remove(self):
         pass
     #Tähän tulee nyt se algoritmi palvelimen valintaan
     def get_least_loaded_address(self):
@@ -55,7 +55,8 @@ class ServerList(object):
                 elif obj.load < min_addr.load:
                     min_addr = obj
             else:
-                pass #delete object 
+                # Poista vanha listasta
+                self.candidates.remove(obj)
         return min_addr
         
 servers = ServerList(timeout=10)
@@ -101,11 +102,6 @@ async def offer(request):
         content_type="application/json",
         text=json.dumps(sdp_data),)
 
-<<<<<<< HEAD
-async def timer():
-    await asyncio.sleep(10)
-    print("asd")
-=======
 async def timer(interval):
     while True:
         servers.update("asd1", 20)
@@ -115,7 +111,6 @@ async def timer(interval):
             print("%s %s %s" % (s.addr, s.load, s.seen))
         valittu = servers.get_least_loaded_address()
         print("Valittu palvelin: %s %s " % (valittu.addr, valittu.age()))
->>>>>>> severi
 
     
 if __name__ == "__main__":
@@ -147,27 +142,21 @@ if __name__ == "__main__":
 
     loop = asyncio.get_event_loop()
 
-<<<<<<< HEAD
-=======
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_message = on_message
     client.connect("localhost", 1883, 60)
     client.loop_start()
 
->>>>>>> severi
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
 
-<<<<<<< HEAD
-=======
     servers.update("asd0",10)
     servers.update("asd1",20)
     servers.update("asd2",30)
 
->>>>>>> severi
     async def web_runner():
         runner = web.AppRunner(app, access_log=None)
         await runner.setup()
@@ -177,23 +166,11 @@ if __name__ == "__main__":
 
     tasks = asyncio.gather(
         web_runner(),
-<<<<<<< HEAD
-        timer()
-=======
         timer(interval=5)
->>>>>>> severi
     )
 
     loop.run_until_complete(tasks)
     try:
         loop.run_forever()
     except KeyboardInterrupt as e:
-<<<<<<< HEAD
         loop.close()
-
-    #web.run_app(
-    #    app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
-    #)
-=======
-        loop.close()
->>>>>>> severi
