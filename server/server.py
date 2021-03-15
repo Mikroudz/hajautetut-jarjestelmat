@@ -102,6 +102,10 @@ async def on_shutdown(app):
     await asyncio.gather(*coros)
     pcs.clear()
 
+async def timer(interval):
+    while True:
+        await asyncio.sleep(interval)
+        print("tulosta")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -124,9 +128,26 @@ if __name__ == "__main__":
 
     ssl_context = None
 
+    loop = asyncio.get_event_loop()
+
     app = web.Application()
     app.on_shutdown.append(on_shutdown)
     app.router.add_post("/offer", offer)
-    web.run_app(
-        app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
+
+    async def web_runner():
+        runner = web.AppRunner(app, access_log=None)
+        await runner.setup()
+        site = web.TCPSite(runner, port=args.port, host=args.host, ssl_context=ssl_context)
+        await site.start()
+        print("Web server started in %s port %s " % (args.host, args.port))
+
+    tasks = asyncio.gather(
+        web_runner(),
+        timer(5)
     )
+
+    loop.run_until_complete(tasks)
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt as e:
+        loop.close()

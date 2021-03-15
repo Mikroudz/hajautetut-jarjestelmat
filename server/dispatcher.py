@@ -15,7 +15,6 @@ ROOT = os.path.dirname(__file__)
 logger = logging.getLogger("pc")
 pcs = set()
 
-
 class ServerList(object):
     def __init__(self, timeout):
         self.candidates = []
@@ -135,18 +134,8 @@ if __name__ == "__main__":
         timer()
     )
 
-    servers.add_new("asd", 10)
-    servers.update("asda", 11)
-    servers.update("asdb", 12)
-    servers.update("asdc", 15)
-
-
     loop.run_until_complete(tasks)
     try:
         loop.run_forever()
     except KeyboardInterrupt as e:
         loop.close()
-
-    #web.run_app(
-    #    app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
-    #)
