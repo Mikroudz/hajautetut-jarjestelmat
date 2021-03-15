@@ -6,6 +6,7 @@ import os
 import ssl
 import uuid
 
+import paho.mqtt.client as mqtt
 from aiohttp import web
 from aiohttp import ClientSession
 from av import VideoFrame
@@ -21,6 +22,10 @@ pcs = set()
 
 relay = MediaRelay()
 broadcast = None
+
+### Publisher
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected with result code {rc}")
 
 def create_broadcast(track):
     global relay, broadcast
@@ -106,6 +111,19 @@ async def on_shutdown(app):
     await asyncio.gather(*coros)
     pcs.clear()
 
+async def timer(interval):
+    while True:
+        await asyncio.sleep(interval)
+        payload_dict = {
+            "num_of_connections": len(pcs),
+            "host": "127.0.0.1:8081"
+        }
+        client.publish('Number of connections',
+            payload=json.dumps(payload_dict), qos=0, retain=False
+        )
+        print(f"send value of {payload_dict['num_of_connections']}"
+            +f" connections from host {payload_dict['host']}"
+            +" to broker")
 
 
 if __name__ == "__main__":
@@ -129,9 +147,29 @@ if __name__ == "__main__":
 
     ssl_context = None
 
+    loop = asyncio.get_event_loop()
+
     app = web.Application()
     app.on_shutdown.append(on_shutdown)
     app.router.add_post("/offer", offer)
-    web.run_app(
-        app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
+    client = mqtt.Client()
+    client.on_connect = on_connect
+    client.connect("localhost", 1883, 60)
+    client.loop_start()
+    async def web_runner():
+        runner = web.AppRunner(app, access_log=None)
+        await runner.setup()
+        site = web.TCPSite(runner, port=args.port, host=args.host, ssl_context=ssl_context)
+        await site.start()
+        print("Web server started in %s port %s " % (args.host, args.port))
+
+    tasks = asyncio.gather(
+        web_runner(),
+        timer(5)
     )
+
+    loop.run_until_complete(tasks)
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt as e:
+        loop.close()
