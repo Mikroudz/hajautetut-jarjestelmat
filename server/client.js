@@ -18,11 +18,8 @@ function createPeerConnection() {
     if (document.getElementById('use-stun').checked) {
         config.iceServers = [{urls: ['stun:stun.l.google.com:19302']}];
     }
-<<<<<<< HEAD
     // Testi, ei toiminut
     // config.iceServer = [{urls: ['turn:localhost:8081']}];
-=======
->>>>>>> severi
 
     pc = new RTCPeerConnection(config);
 
