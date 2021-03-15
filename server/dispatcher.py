@@ -110,7 +110,10 @@ async def timer(interval):
             #print("asd")
             print("%s %s %s" % (s.addr, s.load, s.seen))
         valittu = servers.get_least_loaded_address()
-        print("Valittu palvelin: %s %s " % (valittu.addr, valittu.age()))
+        if valittu != None:
+            print("Valittu palvelin: %s %s " % (valittu.addr, valittu.age()))
+        else:
+            print("Ei aktiivisia palvelimia")
 
     
 if __name__ == "__main__":
