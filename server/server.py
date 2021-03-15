@@ -31,6 +31,54 @@ def create_broadcast(track):
     global relay, broadcast
     broadcast = track
 
+## Pyydetään toiselta palvelimelta WebRTC-streami, jos itsellä sitä ei ole
+async def ask_stream(ask_stream):
+    if ask_stream == "False":
+        return
+    print("Haetaan streami")
+    ## TODO: testaa onko meillä streami olemassa
+    pc = RTCPeerConnection()
+    pc_id = "PeerConnection(%s)" % uuid.uuid4()
+
+    pcs.add(pc)
+    def log_info(msg, *args):
+        logger.info(pc_id + " " + msg, *args)
+    # Videolle on kanava "track"
+    pc.createDataChannel("track")
+    pc.addTransceiver("video",direction="recvonly")
+    # Tämä luo itse offerin oikeassa muodossa
+    await pc.setLocalDescription(await pc.createOffer())
+    # Asetetaan pyynnön parametreiksi
+    params =  {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type, "listen_video": True}
+
+
+    @pc.on("track")
+    def on_track(track):
+        log_info("Track %s received from other server", track.kind)
+        if track.kind == "audio":
+            pc.addTrack(player.audio)
+        elif track.kind == "video":
+            create_broadcast(track)
+            pc.addTrack(relay.subscribe(broadcast))
+        @track.on("ended")
+        async def on_ended():
+            log_info("Track %s ended", track.kind)
+
+    @pc.on("connectionstatechange")
+    async def on_connectionstatechange():
+        log_info("Connection state is %s", pc.connectionState)
+        if pc.connectionState == "failed":
+            await pc.close()
+            pcs.discard(pc)
+        # POST-pyyntö toiselle palvelimelle
+    async with ClientSession() as session:
+        res = await session.post('http://localhost:8081/offer', json=params)
+    result = await res.json()
+
+    answer = RTCSessionDescription(sdp=result["sdp"], type=result["type"])
+    print(answer.sdp)
+    await pc.setRemoteDescription(answer)
+    
 async def offer(request):
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
@@ -38,6 +86,7 @@ async def offer(request):
     logger.info(offer)
 
     pc = RTCPeerConnection()
+
     pc_id = "PeerConnection(%s)" % uuid.uuid4()
     pcs.add(pc)
 
@@ -87,16 +136,17 @@ async def offer(request):
     if params["listen_video"]:
         log_info("Kuuntelu")
         for t in pc.getTransceivers():
+            log_info("Kuuntelu %s", t.kind)
             # Tarkasta onko "broadcast" olemassa
             if t.kind == "video" and broadcast:
                 pc.addTrack(relay.subscribe(broadcast))
 
-    #await recorder.start()
-
     # send answer
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
-
+    print(json.dumps(
+            {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+        ))
     return web.Response(
         content_type="application/json",
         text=json.dumps(
@@ -138,6 +188,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--verbose", "-v", action="count")
     parser.add_argument("--write-audio", help="Write received audio to a file")
+    parser.add_argument("--ask-stream", default="False", help="Write received audio to a file")
+
     args = parser.parse_args()
 
     if args.verbose:
@@ -165,7 +217,8 @@ if __name__ == "__main__":
 
     tasks = asyncio.gather(
         web_runner(),
-        timer(5)
+        timer(5),
+        ask_stream(args.ask_stream)
     )
 
     loop.run_until_complete(tasks)

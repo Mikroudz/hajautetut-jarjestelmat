@@ -13,13 +13,13 @@ Asenna paketit:
 
 .. code-block:: console
 
-    $ pip install aiohttp aiortc
+    $ pip install aiohttp aiortc paho-mqtt
 
-Käynnistä dispatcheri:
+Käynnistä dispatcheri. Huom tarvitset cert-filun ja avaimen:
 
 .. code-block:: console
 
-    $ python dispatcher.py
+    $ python3 dispatcher.py --cert-file ~/cert.pem --key-file ~/key.pem 
 
 Käynnistä videopalvelin:
 
@@ -27,12 +27,18 @@ Käynnistä videopalvelin:
 
     $ python server.py --port 8081
 
+Käynnistä toinen videopalvelin:
+
+.. code-block:: console
+
+    $ python server.py --port 8082
+
 You can then browse to the following page with your browser:
 
 http://127.0.0.1:8080
 
-Once you click `Start` the browser will send the audio and video from its
-webcam to the server.
+Valitse "Broadcast webcam to network" ja sitten paina "start". Avaa toinen
+selainikkuna ja valitse "Listen for the broadcast from network" ja paina "Start".
 
 The server will play a pre-recorded audio clip and send the received video back
 to the browser, optionally applying a transform to it.

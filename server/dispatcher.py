@@ -71,11 +71,8 @@ def on_connect(client, userdata, flags, rc):
 def on_message(client, userdata, msg):
     host = json.loads(msg.payload)["host"]
     cons = json.loads(msg.payload)["num_of_connections"] 
-
     servers.update(host, cons)
-
-
-    print(f"Added host {host} with {cons} connections")
+    #print(f"Added host {host} with {cons} connections")
 
 async def index(request):
     content = open(os.path.join(ROOT, "index.html"), "r").read()
@@ -85,16 +82,17 @@ async def javascript(request):
     content = open(os.path.join(ROOT, "client.js"), "r").read()
     return web.Response(content_type="application/javascript", text=content)
 
-
-
 ## Tähän tulee client-verkkosivulta WebRTC-pyynnöt
 async def offer(request):
     # Hae post-requestin parametrin. ELi tässä on se sdp-data clientiltä json-muodossa
     params = await request.json()
-    #logger.info(offer)
+    logger.info(params)
     # Välitä json data eteenpäin 8081-portissa toimivalle videopalvelimelle
     async with ClientSession() as session:
-        res = await session.post('http://localhost:8081/offer', json=params)
+        if not params["listen_video"]:
+            res = await session.post('http://localhost:8081/offer', json=params)
+        else:
+            res = await session.post('http://localhost:8082/offer', json=params)
     #Lue vastaus videopalvelimelta
     sdp_data = await res.json()
     # Palauta clientin responseen videopalvelimen sdp-data json-muodossa
