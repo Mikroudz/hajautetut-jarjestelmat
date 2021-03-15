@@ -6,6 +6,7 @@ import os
 import ssl
 import uuid
 
+import paho.mqtt.client as mqtt
 from aiohttp import web
 from aiohttp import ClientSession
 from av import VideoFrame

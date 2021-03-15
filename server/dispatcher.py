@@ -5,6 +5,7 @@ import logging
 import os
 import ssl
 import uuid
+import paho.mqtt.client as mqtt
 
 from aiohttp import web
 from aiohttp import ClientSession
@@ -17,21 +18,24 @@ pcs = set()
 
 class ServerList(object):
     def __init__(self, timeout):
+        # Lista serveriobjekteista
         self.candidates = []
         self.timeout = timeout
+    # Luokka joka kuvaa yhtä serveriä
     class Server:
         def __init__(self, address, load):
             self.addr = address
             self.load = load
             self.seen = time()
+        # Päivitä ikä
         def update_time(self):
             self.seen = time()
+        # Laske ikä ja palauta
         def age(self):
             return time() - self.seen
-        
     def add_new(self, addr, load):
         self.candidates.append(self.Server(addr,load))
-
+    # Päivitä tai lisää objektilistaan
     def update(self, address, load):
         for obj in self.candidates:
             if obj.addr == address:
@@ -39,23 +43,42 @@ class ServerList(object):
                 obj.update_time()
                 return
         self.add_new(address, load)
-
+    # Poista vanha palvelin käytöstä jos seen > timeout
     def remove_old(self):
         pass
+    #Tähän tulee nyt se algoritmi palvelimen valintaan
     def get_least_loaded_address(self):
         min_addr = None
         for obj in self.candidates:
             if obj.age() < self.timeout:
-                min_addr = obj.addr
+                if min_addr == None:
+                    min_addr = obj
+                elif obj.load < min_addr.load:
+                    min_addr = obj
+            else:
+                pass #delete object 
         return min_addr
         
+servers = ServerList(timeout=10)
 
-servers = ServerList(10)
+### Subscriber
+# The callback function of connection
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected with result code {rc}")
+    client.subscribe("Number of connections")
+    
+# The callback function for received message
+def on_message(client, userdata, msg):
+    host = json.loads(msg.payload)["host"]
+    cons = json.loads(msg.payload)["num_of_connections"] 
+    timestamp = datetime.datetime.now().timestamp()
+    connections[host] = (cons, timestamp) 
+    print(f"Added host {host} with {cons} connections")
+    print(f"Timestamp: {timestamp}")
 
 async def index(request):
     content = open(os.path.join(ROOT, "index.html"), "r").read()
     return web.Response(content_type="text/html", text=content)
-
 
 async def javascript(request):
     content = open(os.path.join(ROOT, "client.js"), "r").read()
@@ -76,17 +99,15 @@ async def offer(request):
         content_type="application/json",
         text=json.dumps(sdp_data),)
 
-async def timer():
-    val = 5
+async def timer(interval):
     while True:
-        servers.update("asda", val)
-        await asyncio.sleep(1)
+        servers.update("asd1", 20)
+        await asyncio.sleep(interval)
         for s in servers.candidates:
             #print("asd")
             print("%s %s %s" % (s.addr, s.load, s.seen))
-
-        print(servers.get_least_loaded_address())
-    
+        valittu = servers.get_least_loaded_address()
+        print("Valittu palvelin: %s %s " % (valittu.addr, valittu.age()))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -117,10 +138,20 @@ if __name__ == "__main__":
 
     loop = asyncio.get_event_loop()
 
+    client = mqtt.Client()
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.connect("localhost", 1883, 60)
+    client.loop_start()
+
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
+
+    servers.update("asd0",10)
+    servers.update("asd1",20)
+    servers.update("asd2",30)
 
     async def web_runner():
         runner = web.AppRunner(app, access_log=None)
@@ -131,7 +162,7 @@ if __name__ == "__main__":
 
     tasks = asyncio.gather(
         web_runner(),
-        timer()
+        timer(interval=5)
     )
 
     loop.run_until_complete(tasks)
