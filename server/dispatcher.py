@@ -71,10 +71,11 @@ def on_connect(client, userdata, flags, rc):
 def on_message(client, userdata, msg):
     host = json.loads(msg.payload)["host"]
     cons = json.loads(msg.payload)["num_of_connections"] 
-    timestamp = datetime.datetime.now().timestamp()
-    connections[host] = (cons, timestamp) 
+
+    servers.update(host, cons)
+
+
     print(f"Added host {host} with {cons} connections")
-    print(f"Timestamp: {timestamp}")
 
 async def index(request):
     content = open(os.path.join(ROOT, "index.html"), "r").read()

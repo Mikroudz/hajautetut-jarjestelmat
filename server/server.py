@@ -23,6 +23,10 @@ pcs = set()
 relay = MediaRelay()
 broadcast = None
 
+### Publisher
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected with result code {rc}")
+
 def create_broadcast(track):
     global relay, broadcast
     broadcast = track
@@ -106,7 +110,16 @@ async def on_shutdown(app):
 async def timer(interval):
     while True:
         await asyncio.sleep(interval)
-        print("tulosta")
+        payload_dict = {
+            "num_of_connections": len(pcs),
+            "host": "127.0.0.1:8081"
+        }
+        client.publish('Number of connections',
+            payload=json.dumps(payload_dict), qos=0, retain=False
+        )
+        print(f"send value of {payload_dict['num_of_connections']}"
+            +f" connections from host {payload_dict['host']}"
+            +" to broker")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -134,7 +147,10 @@ if __name__ == "__main__":
     app = web.Application()
     app.on_shutdown.append(on_shutdown)
     app.router.add_post("/offer", offer)
-
+    client = mqtt.Client()
+    client.on_connect = on_connect
+    client.connect("localhost", 1883, 60)
+    client.loop_start()
     async def web_runner():
         runner = web.AppRunner(app, access_log=None)
         await runner.setup()
