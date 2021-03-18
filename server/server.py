@@ -6,6 +6,7 @@ import os
 import ssl
 import uuid
 
+import paho.mqtt.client as mqtt
 from aiohttp import web
 from aiohttp import ClientSession
 from av import VideoFrame
@@ -22,17 +23,81 @@ pcs = set()
 relay = MediaRelay()
 broadcast = None
 
+### Publisher
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected with result code {rc}")
+    client.subscribe("Number of connections")
+
 def create_broadcast(track):
-    global relay, broadcast
+    global broadcast
     broadcast = track
 
+def broadcast_ended():
+    global broadcast
+    broadcast = None
+
+## Pyydetään toiselta palvelimelta WebRTC-streami, jos itsellä sitä ei ole
+async def ask_stream(ask_stream):
+    await asyncio.sleep(3)
+    if ask_stream == "False":
+        return
+
+    # Onko meillä streami
+    if broadcast:
+        return
+
+    print("Haetaan streami")
+    ## TODO: testaa onko meillä streami olemassa
+    pc = RTCPeerConnection()
+    pc_id = "PeerConnection(%s)" % uuid.uuid4()
+
+    pcs.add(pc)
+    def log_info(msg, *args):
+        logger.info(pc_id + " " + msg, *args)
+    # Videolle on kanava "track"
+    pc.createDataChannel("track")
+    pc.addTransceiver("video",direction="recvonly")
+    # Tämä luo itse offerin oikeassa muodossa
+    await pc.setLocalDescription(await pc.createOffer())
+    # Asetetaan pyynnön parametreiksi
+    params =  {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type, "listen_video": True}
+
+    @pc.on("track")
+    def on_track(track):
+        log_info("Track %s received from other server", track.kind)
+        if track.kind == "audio":
+            pc.addTrack(player.audio)
+        elif track.kind == "video":
+            create_broadcast(track)
+            pc.addTrack(relay.subscribe(broadcast))
+        @track.on("ended")
+        async def on_ended():
+            log_info("Track %s ended", track.kind)
+            broadcast = None
+
+    @pc.on("connectionstatechange")
+    async def on_connectionstatechange():
+        log_info("Connection state is %s", pc.connectionState)
+        if pc.connectionState == "failed":
+            await pc.close()
+            pcs.discard(pc)
+    # POST-pyyntö dispatcherille
+    async with ClientSession() as session:
+        res = await session.post('https://localhost:8080/offer', json=params,ssl=False)
+    result = await res.json()
+
+    answer = RTCSessionDescription(sdp=result["sdp"], type=result["type"])
+    #print(answer.sdp)
+    await pc.setRemoteDescription(answer)
+    
 async def offer(request):
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
-    logger.info(offer)
+    #logger.info(offer)
 
     pc = RTCPeerConnection()
+
     pc_id = "PeerConnection(%s)" % uuid.uuid4()
     pcs.add(pc)
 
@@ -72,7 +137,7 @@ async def offer(request):
         @track.on("ended")
         async def on_ended():
             log_info("Track %s ended", track.kind)
-            #await recorder.stop()
+            #broadcast_ended()
 
     # handle offer
     await pc.setRemoteDescription(offer)
@@ -82,16 +147,17 @@ async def offer(request):
     if params["listen_video"]:
         log_info("Kuuntelu")
         for t in pc.getTransceivers():
+            log_info("Kuuntelu %s", t.kind)
             # Tarkasta onko "broadcast" olemassa
             if t.kind == "video" and broadcast:
                 pc.addTrack(relay.subscribe(broadcast))
 
-    #await recorder.start()
-
     # send answer
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
-
+    #print(json.dumps(
+    #        {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+    #    ))
     return web.Response(
         content_type="application/json",
         text=json.dumps(
@@ -99,13 +165,27 @@ async def offer(request):
         ),
     )
 
-
 async def on_shutdown(app):
     # close peer connections
     coros = [pc.close() for pc in pcs]
     await asyncio.gather(*coros)
     pcs.clear()
 
+async def report_connections(interval, host, port):
+    while True:
+        await asyncio.sleep(interval)
+        if broadcast:
+            print(relay.subscribe(broadcast).id)
+            payload_dict = {
+                "num_of_connections": len(pcs),
+                "host": f"{host}:{port}"
+            }
+            client.publish('Number of connections',
+                payload=json.dumps(payload_dict), qos=0, retain=False
+            )
+            print(f"send value of {payload_dict['num_of_connections']}"
+                +f" connections from host {payload_dict['host']}"
+                +" to broker")
 
 
 if __name__ == "__main__":
@@ -120,6 +200,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--verbose", "-v", action="count")
     parser.add_argument("--write-audio", help="Write received audio to a file")
+    parser.add_argument("--ask-stream", default="False", help="Write received audio to a file")
+
     args = parser.parse_args()
 
     if args.verbose:
@@ -129,9 +211,30 @@ if __name__ == "__main__":
 
     ssl_context = None
 
+    loop = asyncio.get_event_loop()
+
     app = web.Application()
     app.on_shutdown.append(on_shutdown)
     app.router.add_post("/offer", offer)
-    web.run_app(
-        app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
+    client = mqtt.Client()
+    client.on_connect = on_connect
+    client.connect("localhost", 1883, 60)
+    client.loop_start()
+    async def web_runner():
+        runner = web.AppRunner(app, access_log=None)
+        await runner.setup()
+        site = web.TCPSite(runner, port=args.port, host=args.host, ssl_context=ssl_context)
+        await site.start()
+        print("Web server started in %s port %s " % (args.host, args.port))
+
+    tasks = asyncio.gather(
+        web_runner(),
+        report_connections(5, args.host, args.port),
+        ask_stream(args.ask_stream)
     )
+
+    loop.run_until_complete(tasks)
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt as e:
+        loop.close()
