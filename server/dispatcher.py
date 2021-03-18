@@ -84,15 +84,18 @@ async def javascript(request):
 
 ## Tähän tulee client-verkkosivulta WebRTC-pyynnöt
 async def offer(request):
+    global servers
     # Hae post-requestin parametrin. ELi tässä on se sdp-data clientiltä json-muodossa
     params = await request.json()
-    logger.info(params)
+    #logger.info(params)
     # Välitä json data eteenpäin 8081-portissa toimivalle videopalvelimelle
     async with ClientSession() as session:
-        if not params["listen_video"]:
-            res = await session.post('http://localhost:8081/offer', json=params)
+        if params["listen_video"]:
+            server = servers.get_least_loaded_address()
+            print(f"Valittiin {server.addr} Kuorma: {server.load}")
+            res = await session.post(f'http://{server.addr}/offer', json=params)
         else:
-            res = await session.post('http://localhost:8082/offer', json=params)
+            res = await session.post('http://localhost:8081/offer', json=params)
     #Lue vastaus videopalvelimelta
     sdp_data = await res.json()
     # Palauta clientin responseen videopalvelimen sdp-data json-muodossa
@@ -102,16 +105,11 @@ async def offer(request):
 
 async def timer(interval):
     while True:
-        servers.update("asd1", 20)
+        #servers.update("asd1", 20)
         await asyncio.sleep(interval)
+        print("Palavelimet listassa:")
         for s in servers.candidates:
-            #print("asd")
-            print("%s %s %s" % (s.addr, s.load, s.seen))
-        valittu = servers.get_least_loaded_address()
-        if valittu != None:
-            print("Valittu palvelin: %s %s " % (valittu.addr, valittu.age()))
-        else:
-            print("Ei aktiivisia palvelimia")
+            print("%s %s %s" % (s.addr, s.load, s.age()))
 
     
 if __name__ == "__main__":
@@ -154,9 +152,9 @@ if __name__ == "__main__":
     app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
 
-    servers.update("asd0",10)
-    servers.update("asd1",20)
-    servers.update("asd2",30)
+    #servers.update("asd0",10)
+   # servers.update("asd1",20)
+    #servers.update("asd2",30)
 
     async def web_runner():
         runner = web.AppRunner(app, access_log=None)

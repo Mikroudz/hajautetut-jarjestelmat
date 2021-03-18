@@ -50,10 +50,7 @@ function createPeerConnection() {
 }
 
 function negotiate() {
-    if (document.getElementById('listen-video').checked) {
-        pc.addTransceiver('video', {direction: 'recvonly'});
-        //pc.addTransceiver('audio', {direction: 'recvonly'});
-    }
+    
     return pc.createOffer().then(function(offer) {
         return pc.setLocalDescription(offer);
     }).then(function() {
@@ -124,6 +121,10 @@ function start() {
         }
     }
 
+    // signalointikanava
+    //sc = pc.createDataChannel('signaling');
+
+
     if (document.getElementById('use-datachannel').checked) {
         var parameters = JSON.parse(document.getElementById('datachannel-parameters').value);
 
@@ -170,7 +171,10 @@ function start() {
     if (document.getElementById('listen-video').checked) {
         document.getElementById('media').style.display = 'block';
     }
-
+    if (document.getElementById('listen-video').checked) {
+        pc.addTransceiver('video', {direction: 'recvonly'});
+        //pc.addTransceiver('audio', {direction: 'recvonly'});
+    }
     if ((constraints.video)) {
         if (constraints.video) {
             document.getElementById('media').style.display = 'block';

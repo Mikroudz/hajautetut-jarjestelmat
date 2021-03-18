@@ -26,15 +26,26 @@ broadcast = None
 ### Publisher
 def on_connect(client, userdata, flags, rc):
     print(f"Connected with result code {rc}")
+    client.subscribe("Number of connections")
 
 def create_broadcast(track):
-    global relay, broadcast
+    global broadcast
     broadcast = track
+
+def broadcast_ended():
+    global broadcast
+    broadcast = None
 
 ## Pyydetään toiselta palvelimelta WebRTC-streami, jos itsellä sitä ei ole
 async def ask_stream(ask_stream):
+    await asyncio.sleep(3)
     if ask_stream == "False":
         return
+
+    # Onko meillä streami
+    if broadcast:
+        return
+
     print("Haetaan streami")
     ## TODO: testaa onko meillä streami olemassa
     pc = RTCPeerConnection()
@@ -51,7 +62,6 @@ async def ask_stream(ask_stream):
     # Asetetaan pyynnön parametreiksi
     params =  {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type, "listen_video": True}
 
-
     @pc.on("track")
     def on_track(track):
         log_info("Track %s received from other server", track.kind)
@@ -63,6 +73,7 @@ async def ask_stream(ask_stream):
         @track.on("ended")
         async def on_ended():
             log_info("Track %s ended", track.kind)
+            broadcast = None
 
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
@@ -70,20 +81,20 @@ async def ask_stream(ask_stream):
         if pc.connectionState == "failed":
             await pc.close()
             pcs.discard(pc)
-        # POST-pyyntö toiselle palvelimelle
+    # POST-pyyntö dispatcherille
     async with ClientSession() as session:
-        res = await session.post('http://localhost:8081/offer', json=params)
+        res = await session.post('https://localhost:8080/offer', json=params,ssl=False)
     result = await res.json()
 
     answer = RTCSessionDescription(sdp=result["sdp"], type=result["type"])
-    print(answer.sdp)
+    #print(answer.sdp)
     await pc.setRemoteDescription(answer)
     
 async def offer(request):
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
-    logger.info(offer)
+    #logger.info(offer)
 
     pc = RTCPeerConnection()
 
@@ -126,7 +137,7 @@ async def offer(request):
         @track.on("ended")
         async def on_ended():
             log_info("Track %s ended", track.kind)
-            #await recorder.stop()
+            #broadcast_ended()
 
     # handle offer
     await pc.setRemoteDescription(offer)
@@ -144,9 +155,9 @@ async def offer(request):
     # send answer
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
-    print(json.dumps(
-            {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
-        ))
+    #print(json.dumps(
+    #        {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+    #    ))
     return web.Response(
         content_type="application/json",
         text=json.dumps(
@@ -154,26 +165,27 @@ async def offer(request):
         ),
     )
 
-
 async def on_shutdown(app):
     # close peer connections
     coros = [pc.close() for pc in pcs]
     await asyncio.gather(*coros)
     pcs.clear()
 
-async def timer(interval):
+async def report_connections(interval, host, port):
     while True:
         await asyncio.sleep(interval)
-        payload_dict = {
-            "num_of_connections": len(pcs),
-            "host": "127.0.0.1:8081"
-        }
-        client.publish('Number of connections',
-            payload=json.dumps(payload_dict), qos=0, retain=False
-        )
-        print(f"send value of {payload_dict['num_of_connections']}"
-            +f" connections from host {payload_dict['host']}"
-            +" to broker")
+        if broadcast:
+            print(relay.subscribe(broadcast).id)
+            payload_dict = {
+                "num_of_connections": len(pcs),
+                "host": f"{host}:{port}"
+            }
+            client.publish('Number of connections',
+                payload=json.dumps(payload_dict), qos=0, retain=False
+            )
+            print(f"send value of {payload_dict['num_of_connections']}"
+                +f" connections from host {payload_dict['host']}"
+                +" to broker")
 
 
 if __name__ == "__main__":
@@ -217,7 +229,7 @@ if __name__ == "__main__":
 
     tasks = asyncio.gather(
         web_runner(),
-        timer(5),
+        report_connections(5, args.host, args.port),
         ask_stream(args.ask_stream)
     )
 
