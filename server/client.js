@@ -15,9 +15,9 @@ function createPeerConnection() {
         sdpSemantics: 'unified-plan'
     };
 
-    if (document.getElementById('use-stun').checked) {
-        config.iceServers = [{urls: ['stun:stun.l.google.com:19302']}];
-    }
+    //if (document.getElementById('use-stun').checked) {
+    //    config.iceServers = [{urls: ['stun:stun.l.google.com:19302']}];
+    //}
 
     pc = new RTCPeerConnection(config);
 

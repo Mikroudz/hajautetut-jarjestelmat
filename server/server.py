@@ -37,58 +37,82 @@ def broadcast_ended():
     broadcast = None
 
 ## Pyydetään toiselta palvelimelta WebRTC-streami, jos itsellä sitä ei ole
-async def ask_stream(ask_stream):
-    await asyncio.sleep(3)
-    if ask_stream == "False":
-        return
+async def ask_stream(ask_stream, timeout):
+    while True:
+        await asyncio.sleep(3)
+        if ask_stream == "False":
+            return
+        # Onko meillä streami
+        if broadcast:
+            return
 
-    # Onko meillä streami
-    if broadcast:
-        return
+        print("Haetaan streami")
+        ## TODO: testaa onko meillä streami olemassa
+        pc = RTCPeerConnection()
+        pc_id = "PeerConnection(%s)" % uuid.uuid4()
 
-    print("Haetaan streami")
-    ## TODO: testaa onko meillä streami olemassa
-    pc = RTCPeerConnection()
-    pc_id = "PeerConnection(%s)" % uuid.uuid4()
+        pcs.add(pc)
+        def log_info(msg, *args):
+            logger.info(pc_id + " " + msg, *args)
+        # Videolle on kanava "track"
+        pc.createDataChannel("track")
+        pc.addTransceiver("video",direction="recvonly")
+        # Tämä luo itse offerin oikeassa muodossa
+        await pc.setLocalDescription(await pc.createOffer())
+        # Asetetaan pyynnön parametreiksi
+        params =  {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type, "listen_video": True}
 
-    pcs.add(pc)
-    def log_info(msg, *args):
-        logger.info(pc_id + " " + msg, *args)
-    # Videolle on kanava "track"
-    pc.createDataChannel("track")
-    pc.addTransceiver("video",direction="recvonly")
-    # Tämä luo itse offerin oikeassa muodossa
-    await pc.setLocalDescription(await pc.createOffer())
-    # Asetetaan pyynnön parametreiksi
-    params =  {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type, "listen_video": True}
+        @pc.on("track")
+        def on_track(track):
+            log_info("Track %s received from other server", track.kind)
+            if track.kind == "audio":
+                pc.addTrack(player.audio)
+            elif track.kind == "video":
+                create_broadcast(track)
+                pc.addTrack(relay.subscribe(broadcast))
+            @track.on("ended")
+            async def on_ended():
+                log_info("Track %s ended", track.kind)
+                broadcast_ended()
+                coros = [pc.close() for pc in pcs]
+                await asyncio.gather(*coros)
+                pcs.clear()
+            @track.on("oninactive")
+            async def on_inactive():
+                log_info("Track inactive")
 
-    @pc.on("track")
-    def on_track(track):
-        log_info("Track %s received from other server", track.kind)
-        if track.kind == "audio":
-            pc.addTrack(player.audio)
-        elif track.kind == "video":
-            create_broadcast(track)
-            pc.addTrack(relay.subscribe(broadcast))
-        @track.on("ended")
-        async def on_ended():
-            log_info("Track %s ended", track.kind)
-            broadcast = None
 
-    @pc.on("connectionstatechange")
-    async def on_connectionstatechange():
-        log_info("Connection state is %s", pc.connectionState)
-        if pc.connectionState == "failed":
-            await pc.close()
-            pcs.discard(pc)
-    # POST-pyyntö dispatcherille
-    async with ClientSession() as session:
-        res = await session.post('https://localhost:8080/offer', json=params,ssl=False)
-    result = await res.json()
+        @pc.on("connectionstatechange")
+        async def on_connectionstatechange():
+            log_info("Connection state is %s", pc.connectionState)
+            if pc.connectionState == "failed":
+                broadcast_ended()
+                coros = [pc.close() for pc in pcs]
+                await asyncio.gather(*coros)
+                pcs.clear()
+        print("onko jumiss")
 
-    answer = RTCSessionDescription(sdp=result["sdp"], type=result["type"])
-    #print(answer.sdp)
-    await pc.setRemoteDescription(answer)
+        # POST-pyyntö dispatcherille
+        async with ClientSession() as session:
+            res = await session.post('https://localhost:8080/offer', json=params,ssl=False,timeout=3)
+        if res.status == "500":
+            continue
+        try:
+            result = await res.json()
+        except:
+            continue
+        answer = RTCSessionDescription(sdp=result["sdp"], type=result["type"])
+        #print(answer.sdp)
+        await pc.setRemoteDescription(answer)
+        # Testataan saatiinko aktiivinen track palvelimelta
+        
+        #if pc.getTransceivers()[0].currentDirection == "inactive":
+        #        log_info("Ei streamia")
+                #if pc.signalingState != "closed":
+        #        await pc.close()
+        #        pcs.discard(pc)
+                # Aseta broadcast tyhjäksi
+        #        broadcast_ended()
     
 async def offer(request):
     params = await request.json()
@@ -137,7 +161,14 @@ async def offer(request):
         @track.on("ended")
         async def on_ended():
             log_info("Track %s ended", track.kind)
-            #broadcast_ended()
+            #await pc.close()
+            #pcs.discard(pc)
+            broadcast_ended()
+
+            coros = [pc.close() for pc in pcs]
+            await asyncio.gather(*coros)
+            pcs.clear()
+
 
     # handle offer
     await pc.setRemoteDescription(offer)
@@ -151,6 +182,7 @@ async def offer(request):
             # Tarkasta onko "broadcast" olemassa
             if t.kind == "video" and broadcast:
                 pc.addTrack(relay.subscribe(broadcast))
+
 
     # send answer
     answer = await pc.createAnswer()
@@ -175,7 +207,6 @@ async def report_connections(interval, host, port):
     while True:
         await asyncio.sleep(interval)
         if broadcast:
-            print(relay.subscribe(broadcast).id)
             payload_dict = {
                 "num_of_connections": len(pcs),
                 "host": f"{host}:{port}"
@@ -230,7 +261,7 @@ if __name__ == "__main__":
     tasks = asyncio.gather(
         web_runner(),
         report_connections(5, args.host, args.port),
-        ask_stream(args.ask_stream)
+        ask_stream(args.ask_stream, timeout=5)
     )
 
     loop.run_until_complete(tasks)
