@@ -92,8 +92,12 @@ async def offer(request):
     async with ClientSession() as session:
         if params["listen_video"]:
             server = servers.get_least_loaded_address()
-            print(f"Valittiin {server.addr} Kuorma: {server.load}")
-            res = await session.post(f'http://{server.addr}/offer', json=params)
+            if isinstance(server, ServerList.Server):
+                print(f"Valittiin {server.addr} Kuorma: {server.load}")
+                res = await session.post(f'http://{server.addr}/offer', json=params)
+            else:
+                return web.Response(status=500)
+               # res = await session.post('http://localhost:8081/offer', json=params)
         else:
             res = await session.post('http://localhost:8081/offer', json=params)
     #Lue vastaus videopalvelimelta
