@@ -6,10 +6,11 @@ import os
 import ssl
 import uuid
 import paho.mqtt.client as mqtt
+import csv
 
 from aiohttp import web
 from aiohttp import ClientSession
-from time import time
+from time import gmtime, strftime, time
 
 ROOT = os.path.dirname(__file__)
 
@@ -107,13 +108,14 @@ async def offer(request):
         content_type="application/json",
         text=json.dumps(sdp_data),)
 
-async def timer(interval):
+async def timer(interval, csv):
     while True:
         #servers.update("asd1", 20)
         await asyncio.sleep(interval)
         print("Palavelimet listassa:")
         for s in servers.candidates:
             print("%s %s %s" % (s.addr, s.load, s.age()))
+            csv.writerow([s.addr, s.load, s.age()])
 
     
 if __name__ == "__main__":
@@ -156,9 +158,11 @@ if __name__ == "__main__":
     app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
 
-    #servers.update("asd0",10)
-   # servers.update("asd1",20)
-    #servers.update("asd2",30)
+    csv_writer = None
+    file_csv = open(f"logs/{strftime('%Y-%m-%d_%H:%M:%S', gmtime())}.csv", 'w', newline='')
+    with file_csv as f:
+        csv_writer = csv.writer(f)
+        csv_writer.writerow(["Address", "Load", "Age"])
 
     async def web_runner():
         runner = web.AppRunner(app, access_log=None)
@@ -169,7 +173,7 @@ if __name__ == "__main__":
 
     tasks = asyncio.gather(
         web_runner(),
-        timer(interval=5)
+        timer(interval=5, csv=csv_writer)
     )
 
     loop.run_until_complete(tasks)
