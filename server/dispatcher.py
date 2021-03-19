@@ -15,7 +15,6 @@ from time import gmtime, strftime, time
 ROOT = os.path.dirname(__file__)
 
 logger = logging.getLogger("pc")
-
 class ServerList(object):
     def __init__(self, timeout):
         # Lista serveriobjekteista
@@ -59,7 +58,7 @@ class ServerList(object):
                 # Poista vanha listasta
                 self.candidates.remove(obj)
         return min_addr
-        
+
 servers = ServerList(timeout=10)
 
 ### Subscriber
@@ -90,33 +89,44 @@ async def offer(request):
     params = await request.json()
     #logger.info(params)
     # Välitä json data eteenpäin 8081-portissa toimivalle videopalvelimelle
-    async with ClientSession() as session:
-        if params["listen_video"]:
-            server = servers.get_least_loaded_address()
-            if isinstance(server, ServerList.Server):
-                print(f"Valittiin {server.addr} Kuorma: {server.load}")
-                res = await session.post(f'http://{server.addr}/offer', json=params)
-            else:
-                return web.Response(status=500)
-               # res = await session.post('http://localhost:8081/offer', json=params)
+    #async with ClientSession() as session:
+    session = ClientSession()
+    if params["listen_video"]:
+        server = servers.get_least_loaded_address()
+        if isinstance(server, ServerList.Server):
+            print(f"Valittiin {server.addr} Kuorma: {server.load}")
+            #raise web.HTTPFound(f'http://{server.addr}/offer')
+            res = await session.post(f'http://{server.addr}/offer', json=params)
         else:
-            res = await session.post('http://localhost:8081/offer', json=params)
+            return web.Response(status=500)
+            #res = await session.post('http://localhost:8081/offer', json=params)
+    else:
+        res = await session.post('http://localhost:8081/offer', json=params)
     #Lue vastaus videopalvelimelta
+    #print(res)
     sdp_data = await res.json()
+    await session.close()
+   # print(sdp_data)
     # Palauta clientin responseen videopalvelimen sdp-data json-muodossa
     return web.Response(
         content_type="application/json",
         text=json.dumps(sdp_data),)
 
-async def timer(interval, csv):
+async def timer(interval, csv_file):
+    prog_time = 0
     while True:
         #servers.update("asd1", 20)
         await asyncio.sleep(interval)
-        print("Palavelimet listassa:")
-        for s in servers.candidates:
-            print("%s %s %s" % (s.addr, s.load, s.age()))
-            csv.writerow([s.addr, s.load, s.age()])
-
+        with csv_file as f:
+            csv_writer = csv.writer(f)
+            print("Palavelimet listassa:")
+            for s in servers.candidates:
+                print("%s %s %s" % (s.addr, s.load, s.age()))
+                with open(f"logs/{csv_file}.csv", 'w', newline='') as f:
+                    with f:
+                        csv_writer = csv.writer(f)
+                        csv_writer.writerow([interval,s.addr, s.load, s.age()])
+            prog_time += interval
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -158,11 +168,12 @@ if __name__ == "__main__":
     app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
 
-    csv_writer = None
-    file_csv = open(f"logs/{strftime('%Y-%m-%d_%H:%M:%S', gmtime())}.csv", 'w', newline='')
-    with file_csv as f:
-        csv_writer = csv.writer(f)
-        csv_writer.writerow(["Address", "Load", "Age"])
+    file_csv = strftime('%Y-%m-%d_%H-%M-%S', gmtime())
+    
+    with open(f"logs/{file_csv}.csv", 'w', newline='') as f:
+        with f:
+            csv_writer = csv.writer(f)
+            csv_writer.writerow(["Time","Address", "Load", "Age"])
 
     async def web_runner():
         runner = web.AppRunner(app, access_log=None)
@@ -173,7 +184,7 @@ if __name__ == "__main__":
 
     tasks = asyncio.gather(
         web_runner(),
-        timer(interval=5, csv=csv_writer)
+        timer(interval=5, csv_file=file_csv)
     )
 
     loop.run_until_complete(tasks)

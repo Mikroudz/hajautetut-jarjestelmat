@@ -24,19 +24,11 @@ relay = MediaRelay()
 broadcast = None
 blackhole = MediaBlackhole()
 
-def create_broadcast(track):
-    global broadcast
-    broadcast = track
-
-def broadcast_ended():
-    global broadcast
-    broadcast = None
-
 ## Pyydetään dispatcherilta WebRTC-streami
-async def ask_stream(ask_stream):
+async def ask_stream(interval):
     global blackhole
+    await asyncio.sleep(interval)
     print("Haetaan streami")
-    ## TODO: testaa onko meillä streami olemassa
     pc = RTCPeerConnection()
     pc_id = "PeerConnection(%s)" % uuid.uuid4()
 
@@ -65,7 +57,6 @@ async def ask_stream(ask_stream):
         @track.on("ended")
         async def on_ended():
             log_info("Track %s ended", track.kind)
-            broadcast = None
 
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
@@ -73,24 +64,45 @@ async def ask_stream(ask_stream):
         if pc.connectionState == "failed":
             await pc.close()
             pcs.discard(pc)
+    status = False
+    session = ClientSession()
     # POST-pyyntö dispatcherille
-    async with ClientSession() as session:
-        res = await session.post('http://localhost:8080/offer', json=params,ssl=False)
-    result = await res.json()
-
+    while not status:
+        status = True
+        await asyncio.sleep(1)
+        try:
+            res = await session.post('https://localhost:8080/offer', json=params,ssl=False, timeout=3)
+        except:
+            status = False
+            continue
+        print("onko jumissa")
+        if res.status == "500":
+            status = False
+            continue
+        try:
+            result = await res.json()
+        except:
+            status = False
+            continue
     answer = RTCSessionDescription(sdp=result["sdp"], type=result["type"])
+    await session.close()
     #print(answer.sdp)
     await pc.setRemoteDescription(answer)
 
 
 async def generate_client(interval, clients):
     for i in range(clients):
-        await ask_stream(args.ask_stream)
+        tasks = set()
+        task = asyncio.create_task(ask_stream(interval + i))
+        tasks.add(task)
         print("Client %d added", i)
-        await asyncio.sleep(interval)
 
+    print("Client generated!")
+    return await asyncio.gather(*tasks)
 
-async def on_shutdown(app):
+            
+
+async def on_shutdown():
     # close peer connections
     coros = [pc.close() for pc in pcs]
     await asyncio.gather(*coros)
@@ -108,8 +120,9 @@ if __name__ == "__main__":
         "--port", type=int, default=8080, help="Port for HTTP server (default: 8080)"
     )
     parser.add_argument("--verbose", "-v", action="count")
-    parser.add_argument("--write-audio", help="Write received audio to a file")
-    parser.add_argument("--ask-stream", default="False", help="Write received audio to a file")
+    parser.add_argument("--clients", default=1, help="How many clients to create")
+    parser.add_argument("--client_interval", default=1, help="How long wait between client creation")
+
 
     args = parser.parse_args()
 
@@ -118,33 +131,15 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(level=logging.INFO)
 
-    ssl_context = None
-
     loop = asyncio.get_event_loop()
 
-    #app = web.Application()
-    #app.on_shutdown.append(on_shutdown)
-    #app.router.add_post("/offer", offer)
-    '''
-    client = mqtt.Client()
-    client.on_connect = on_connect
-    client.connect("localhost", 1883, 60)
-    client.loop_start()
-    
-    async def web_runner():
-        runner = web.AppRunner(app, access_log=None)
-        await runner.setup()
-        site = web.TCPSite(runner, port=args.port, host=args.host, ssl_context=ssl_context)
-        await site.start()
-        print("Web server started in %s port %s " % (args.host, args.port))
-    '''
-
     tasks = asyncio.gather(
-        generate_client(interval=1, clients=10)
+        generate_client(interval=float(args.client_interval), clients=int(args.clients))
     )
 
-    loop.run_until_complete(tasks)
+    #loop.run_until_complete(tasks)
     try:
-        loop.run_forever()
+        asyncio.run(generate_client(interval=float(args.client_interval), clients=int(args.clients)))
     except KeyboardInterrupt as e:
+        asyncio.run(on_shutdown)
         loop.close()

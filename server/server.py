@@ -11,7 +11,7 @@ from aiohttp import web
 from aiohttp import ClientSession
 from av import VideoFrame
 
-from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
+from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription, RTCRtpSender
 from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder, MediaRelay
 
 ROOT = os.path.dirname(__file__)
@@ -93,26 +93,18 @@ async def ask_stream(ask_stream, timeout):
         print("onko jumiss")
 
         # POST-pyyntö dispatcherille
-        async with ClientSession() as session:
-            res = await session.post('https://localhost:8080/offer', json=params,ssl=False,timeout=3)
+        session = ClientSession()
+        res = await session.post('https://localhost:8080/offer', json=params,ssl=False,timeout=3)
         if res.status == "500":
             continue
         try:
             result = await res.json()
         except:
             continue
+        await session.close()
         answer = RTCSessionDescription(sdp=result["sdp"], type=result["type"])
         #print(answer.sdp)
         await pc.setRemoteDescription(answer)
-        # Testataan saatiinko aktiivinen track palvelimelta
-        
-        #if pc.getTransceivers()[0].currentDirection == "inactive":
-        #        log_info("Ei streamia")
-                #if pc.signalingState != "closed":
-        #        await pc.close()
-        #        pcs.discard(pc)
-                # Aseta broadcast tyhjäksi
-        #        broadcast_ended()
     
 async def offer(request):
     params = await request.json()
@@ -156,7 +148,9 @@ async def offer(request):
             recorder.addTrack(track)
         elif track.kind == "video":
             create_broadcast(track)
-            pc.addTrack(relay.subscribe(broadcast))
+            pc.addTrack(track)
+
+            #pc.addTrack(track)#relay.subscribe(broadcast))
 
         @track.on("ended")
         async def on_ended():
@@ -182,14 +176,19 @@ async def offer(request):
             # Tarkasta onko "broadcast" olemassa
             if t.kind == "video" and broadcast:
                 pc.addTrack(relay.subscribe(broadcast))
+                capabilities = RTCRtpSender.getCapabilities('video')
+                preferences = list(filter(lambda x: x.name == 'H264', capabilities.codecs))
+                print(preferences)
+                transc = pc.getTransceivers()[0]
+                transc.setCodecPreferences(preferences)
 
 
     # send answer
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
-    #print(json.dumps(
-    #        {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
-    #    ))
+    print(json.dumps(
+            {"type": pc.localDescription.type}
+        ))
     return web.Response(
         content_type="application/json",
         text=json.dumps(
