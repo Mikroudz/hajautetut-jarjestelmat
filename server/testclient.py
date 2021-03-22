@@ -93,7 +93,7 @@ async def ask_stream(interval):
 async def generate_client(interval, clients):
     for i in range(clients):
         tasks = set()
-        task = asyncio.create_task(ask_stream(interval + i))
+        task = asyncio.create_task(ask_stream(interval * i))
         tasks.add(task)
         print("Client %d added", i)
 
@@ -130,12 +130,6 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
-
-    loop = asyncio.get_event_loop()
-
-    tasks = asyncio.gather(
-        generate_client(interval=float(args.client_interval), clients=int(args.clients))
-    )
 
     #loop.run_until_complete(tasks)
     try:

@@ -117,16 +117,13 @@ async def timer(interval, csv_file):
     while True:
         #servers.update("asd1", 20)
         await asyncio.sleep(interval)
-        with csv_file as f:
-            csv_writer = csv.writer(f)
-            print("Palavelimet listassa:")
-            for s in servers.candidates:
-                print("%s %s %s" % (s.addr, s.load, s.age()))
-                with open(f"logs/{csv_file}.csv", 'w', newline='') as f:
-                    with f:
-                        csv_writer = csv.writer(f)
-                        csv_writer.writerow([interval,s.addr, s.load, s.age()])
-            prog_time += interval
+        print("Palavelimet listassa:")
+        for s in servers.candidates:
+            print("%s %s %s" % (s.addr, s.load, s.age()))
+            with open(f"logs/{csv_file}.csv", 'a', newline='') as f:
+                csv_writer = csv.writer(f)
+                csv_writer.writerow([prog_time,s.addr, s.load, s.age()])
+        prog_time += interval
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
